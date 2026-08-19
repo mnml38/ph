@@ -3,8 +3,11 @@
 
     var PLUGIN_KEY = 'pornhub_lampa_viewer';
     var AGE_KEY = 'pornhub_lampa_age_confirmed';
-    var VERSION = '1.0.0';
+    var VERSION = '1.0.1';
     var DOMAIN = 'www.pornhub.com';
+    var menuButton = null;
+    var menuRetryTimer = null;
+    var menuRetryCount = 0;
 
     function text(value) {
         return String(value || '').replace(/^\s+|\s+$/g, '');
@@ -135,15 +138,43 @@
     }
 
     function addMenuButton() {
-        if (!Lampa.Menu || typeof Lampa.Menu.addButton !== 'function') return;
-        if (document.querySelector('.lampa-pornhub-menu-button')) return;
+        if (menuButton) return true;
+        if (!Lampa.Menu || typeof Lampa.Menu.addButton !== 'function') return false;
 
         var icon = '<svg class="lampa-pornhub-menu-button" width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">' +
             '<circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" stroke-width="2"/>' +
             '<path d="M14 12.5v11l10-5.5z" fill="currentColor"/>' +
             '</svg>';
 
-        Lampa.Menu.addButton(icon, 'Pornhub 18+', showMenu);
+        try {
+            menuButton = Lampa.Menu.addButton(icon, 'Pornhub 18+', showMenu);
+
+            // В текущем API addButton возвращает jQuery-элемент.
+            // Класс на внешнем элементе помогает не создать кнопку повторно.
+            if (menuButton && typeof menuButton.addClass === 'function') {
+                menuButton.addClass('lampa-pornhub-menu-button');
+            }
+
+            // Совместимость со старыми сборками, где addButton ничего не возвращает.
+            if (!menuButton) menuButton = true;
+            return true;
+        } catch (error) {
+            menuButton = null;
+            console.warn('[Pornhub Lampa] menu is not ready yet', error);
+            return false;
+        }
+    }
+
+    function retryAddMenuButton() {
+        if (addMenuButton()) return;
+        if (menuRetryCount >= 80) {
+            console.warn('[Pornhub Lampa] failed to add menu button after retries');
+            return;
+        }
+
+        menuRetryCount += 1;
+        clearTimeout(menuRetryTimer);
+        menuRetryTimer = setTimeout(retryAddMenuButton, 250);
     }
 
     function startPlugin() {
@@ -159,7 +190,15 @@
             };
         }
 
-        addMenuButton();
+        // appready может прийти раньше инициализации HTML меню.
+        // Повторяем попытку и дополнительно слушаем событие завершения меню.
+        retryAddMenuButton();
+
+        if (Lampa.Listener) {
+            Lampa.Listener.follow('menu', function (event) {
+                if (event.type === 'end') addMenuButton();
+            });
+        }
     }
 
     if (window.appready) {
